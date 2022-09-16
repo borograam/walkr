@@ -6,7 +6,7 @@ brew install pipenv graphviz
 
 install:
 ```
-git clone https://github.com/borograam/walkr.git && cd walkr
+git clone git@github.com:borograam/walkr.git && cd walkr
 pipenv install
 ```
 
