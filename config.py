@@ -1,0 +1,2 @@
+TELEGRAM_TOKEN = ''
+WALKR_TOKEN = ''
