@@ -51,6 +51,25 @@ def _get_params(
     return data
 
 
+async def _make_request(method: str, url: str, session: aiohttp.ClientSession, auth_token: str) -> dict:
+    # todo: 1-2 second optional cache to prevent the same multiple requests (oh no, async)
+    params = _get_params(auth_token)
+    headers = _get_headers()
+
+    logger.info('%s %s params=%s headers=%s', method, url, params, headers)
+    if method == 'get':
+        mng = session.get(url, params=params, headers=headers, ssl=False)
+    elif method == 'post':
+        mng = session.post(url, data=params, headers=headers, ssl=False)
+    else:
+        raise ValueError(f'unknown method - {method}')
+
+    async with mng as response:
+        result = await response.json()
+        logger.info('response %s status, data=%s', response.status, result)
+        return result
+
+
 def make_lab_request(auth_token: str):
     raise NotImplementedError
     url = 'https://production.sw.fourdesire.com/api/v2/labs/68334/request'
@@ -68,24 +87,19 @@ def make_lab_request(auth_token: str):
 
 async def get_lab_info(auth_token: str, session: aiohttp.ClientSession):
     url = 'https://production.sw.fourdesire.com/api/v2/labs/current'
-    data = _get_params(auth_token)
-    headers = _get_headers()
+    result = await _make_request('get', url, session, auth_token)
 
-    logger.info('get %s data=%s headers=%s', url, data, headers)
-    async with session.get(url, params=data, headers=headers, ssl=False) as response:
-        logger.info('response %s status', response.status)
-        result = await response.json()
-        lab_name = result['lab']['name']
-        lab_score = result['lab']['score']
-        members = [m for m in result['members'] if m['rsvp'] == 'member']
+    lab_name = result['lab']['name']
+    lab_score = result['lab']['score']
+    members = [m for m in result['members'] if m['rsvp'] == 'member']
 
-        output_lines = [f'{lab_name} ({lab_score})\n']
-        for member in members:
-            output_lines.append(
-                f'{member["name"]} {member["planets_count"]}🌍 {member["population"]}👥 {member["score"]}⚡️')
+    output_lines = [f'{lab_name} ({lab_score})\n']
+    for member in members:
+        output_lines.append(
+            f'{member["name"]} {member["planets_count"]}🌍 {member["population"]}👥 {member["score"]}⚡️')
 
-        output = '\n'.join(output_lines)
-        return output
+    output = '\n'.join(output_lines)
+    return output
 
 
 @dataclass
@@ -97,17 +111,21 @@ class Fleet:
     voting: Optional[str]
 
 
-def what_the_fleet(data: dict) -> Fleet:
+def what_the_fleet(data: dict) -> Fleet:  # todo it in Fleet init?
     voting = None
     voting_events = [h for h in data['fleet_histories'] if h['event_type'] == 'voting']
     if voting_events:
         member_count = data['fleet']['players_count']
-        for votes, option in zip(
-                (voting_events[0]['value_a'], voting_events[0]['value_b']),
-                (voting_events[0]['label_a'], voting_events[0]['label_b'])
-        ):
-            if 2 * votes >= member_count:
-                voting = option
+        vote_results = []
+        for vote_event in voting_events:
+            for votes, option in zip(
+                    (vote_event['value_a'], vote_event['value_b']),
+                    (vote_event['label_a'], vote_event['label_b'])
+            ):
+                if 2 * votes >= member_count:
+                    vote_results.append(option)
+                    break
+        voting = '|'.join(vote_results)
     return Fleet(
         name=data["fleet"]["name"],
         id=data["fleet"]["id"],
@@ -117,28 +135,54 @@ def what_the_fleet(data: dict) -> Fleet:
     )
 
 
-async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
-    url = 'https://production.sw.fourdesire.com/api/v2/fleets/current'
-    params = _get_params(auth_token)
-    headers = _get_headers()
+@dataclass
+class Event:
+    status: str  # event/path
+    type: str  # preparation/...
+    current_values: tuple[int, int, int]
+    max_values: tuple[Optional[int], Optional[int], Optional[int]]
+    value_labels: tuple[Optional[str], Optional[str], Optional[str]]
+    current_energy: int
+    max_energy: int
 
-    logger.info('get %s params=%s headers=%s', url, params, headers)
-    async with session.get(url, params=params, headers=headers, ssl=False) as response:
-        logger.info('response %s status', response.status)
-        result = await response.json()
+
+def what_the_event(data: dict) -> Event:
+    status = data['event_status']
+    type = data['event']['event_type']
+    current_values = tuple(data['fleet'][f'value_{c}'] for c in ('a', 'b', 'c'))
+    max_values = tuple(data['event'][f'resource_{c}'] for c in ('a', 'b', 'c'))
+    value_labels = tuple(data['event'][f'label_{c}'] for c in ('a', 'b', 'c'))
+    if status == 'path':
+        current_energy = data['fleet']['energy'] + data['fleet']['consumed_energy']
+    else:  # there is energy from the last path
+        current_energy = 0
+    max_energy = data['path']['required_energy']
+    return Event(status, type, current_values, max_values, value_labels, current_energy, max_energy)
+
+
+async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
+    # todo: коротко о следующих этапах
+
+    url = 'https://production.sw.fourdesire.com/api/v2/fleets/current'
+    result = await _make_request('get', url, session, auth_token)
 
     fleet = what_the_fleet(result)
     specify_voting = f' - {fleet.voting}' if fleet.voting else ''
-    output_lines = [f'{fleet.name} ({fleet.epic_name}{specify_voting})\n']
+    output_lines = [f'{fleet.name} ({fleet.epic_name}{specify_voting})']
     comments = []
 
-    sum_contribution_now = result['fleet']['contribution_amount']
+    event = what_the_event(result)
+    cur_event_donation = ', '.join(
+        f'{value}/{max_value}'
+        for value, max_value in zip(event.current_values, event.max_values)
+        if max_value
+    )
+    output_lines.append(f'{event.type} ({cur_event_donation}) -> {event.current_energy}/{event.max_energy}⚡\n')
 
     if fleet.epic_id not in meta.epics:
         logger.error('we have no information about epic id=%s, name=%s', fleet.epic_id, fleet.epic_name)
         comments.append('у меня нет информации по поводу этого эпика, надо бы добавить')
         max_contribution = 0
-
     else:
         meta_epic = meta.epics[fleet.epic_id]['amounts']
         max_contribution = meta_epic.get(fleet.voting)
@@ -146,11 +190,12 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
             will_use_voting, max_contribution = min(meta_epic.items(), key=lambda t: t[1])
             comments.append(f'пока не прошли все голосования, буду использовать итоговый вклад от {will_use_voting}')
 
-    rest_members_count = result['fleet']['members_count']
+    rest_members_count = len(result["members"])
+    sum_contribution_now = result['fleet']['contribution_amount']
 
     for member in result["members"]:
         contribution = member['contribution']
-        percent = round(contribution / sum_contribution_now * 100, 2)
+        percent = round(contribution / sum_contribution_now * 100, 2)  # fixme catch ZeroDivisionError
         ideal_contr = round(max_contribution / rest_members_count)
         if contribution >= ideal_contr:  # слишком много закинул
             # больше не используем этого человека в расчётах
@@ -159,9 +204,10 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
             need_more_str = ''
         else:
             need_more = ideal_contr - contribution
-            need_more_str = f' +{need_more}💰 or {need_more // 20}🍅/🌎 or {need_more // 40}⚡'
+            need_more_str = f' + {need_more}💰 or {need_more // 20}🍅/🌎 or {need_more // 40}⚡'
 
-        output_lines.append(f'{member["name"]} {percent}%{need_more_str}')
+        waiting = '🕐' if member['rsvp'] == 'waiting' else ''
+        output_lines.append(f'{percent}% {waiting}`{member["name"]}`{need_more_str}')
 
     if comments:
         output_lines.append('')
