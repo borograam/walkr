@@ -66,7 +66,7 @@ async def _make_request(method: str, url: str, session: aiohttp.ClientSession, a
 
     async with mng as response:
         result = await response.json()
-        logger.info('response %s status, data=%s', response.status, result)
+        logger.info('response %s status, \ndata=%s', response.status, result)
         return result
 
 
@@ -165,6 +165,9 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
 
     url = 'https://production.sw.fourdesire.com/api/v2/fleets/current'
     result = await _make_request('get', url, session, auth_token)
+
+    # result can be like {'success': True, 'fleet': None, 'now': 1667901025}
+    # todo catch it
 
     fleet = what_the_fleet(result)
     specify_voting = f' - {fleet.voting}' if fleet.voting else ''

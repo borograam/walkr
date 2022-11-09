@@ -40,8 +40,8 @@ epics = {
     10: {
         'name': "Jiangshi & Zombie",
         'amounts': {
-            "Dragon Boat": 9430000,
-            "Wooden Bird": 9370000,
+            "Dragon boat": 9430000,
+            'Wooden bird': 9370000,
         }
     },
     12: {
