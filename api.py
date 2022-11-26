@@ -205,7 +205,7 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
 
     for member in result["members"]:
         contribution = member['contribution']
-        now_percent_str = percent(contribution, sum_contribution_now, '{.2f}%', '0%')
+        now_percent_str = percent(contribution, sum_contribution_now, '{:.2f}%', '0%')
         end_percent_str = percent(contribution, max_contribution, ' [{}%]', default='')
         ideal_contr = round(max_contribution / rest_members_count)
         if contribution >= ideal_contr:  # слишком много закинул
