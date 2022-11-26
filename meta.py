@@ -79,16 +79,16 @@ epics = {
             None: 12580000
         }
     },
+    18: {
+        'name': 'The Most Heart-Warming Recipe',
+        'amounts': {
+            None: 17800000
+        }
+    },
     20: {
         'name': "Escort the lost star traveler",
         'amounts': {
             None: 10206000
-        }
-    },
-    6661: {
-        'name': 'The Most Heart-Warming Recipe',
-        'amounts': {
-            None: 17800000
         }
     },
     6662: {
