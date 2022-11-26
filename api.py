@@ -170,17 +170,7 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
     # todo catch it
 
     fleet = what_the_fleet(result)
-    specify_voting = f' - {fleet.voting}' if fleet.voting else ''
-    output_lines = [f'{fleet.name} ({fleet.epic_name}{specify_voting})']
     comments = []
-
-    event = what_the_event(result)
-    cur_event_donation = ', '.join(
-        f'{value}/{max_value}'
-        for value, max_value in zip(event.current_values, event.max_values)
-        if max_value
-    )
-    output_lines.append(f'{event.type} ({cur_event_donation}) -> {event.current_energy}/{event.max_energy}⚡\n')
 
     if fleet.epic_id not in meta.epics:
         logger.error('we have no information about epic id=%s, name=%s', fleet.epic_id, fleet.epic_name)
@@ -196,9 +186,27 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
     rest_members_count = len(result["members"])
     sum_contribution_now = result['fleet']['contribution_amount']
 
+    def percent(n1: int, n2: int, format_str: str, default: str | None = None) -> str | None:
+        if n2:
+            return format_str.format(round(n1 / n2 * 100, 2))
+        return default
+
+    specify_voting = f' - {fleet.voting}' if fleet.voting else ''
+    fleet_percent = percent(sum_contribution_now, max_contribution, ' [{}%]', default='')
+    output_lines = [f'{fleet.name} ({fleet.epic_name}{specify_voting}){fleet_percent}']
+
+    event = what_the_event(result)
+    cur_event_donation = ', '.join(
+        f'{value}/{max_value}'
+        for value, max_value in zip(event.current_values, event.max_values)
+        if max_value
+    )
+    output_lines.append(f'{event.type} ({cur_event_donation}) -> {event.current_energy}/{event.max_energy}⚡\n')
+
     for member in result["members"]:
         contribution = member['contribution']
-        percent = round(contribution / sum_contribution_now * 100, 2)  # fixme catch ZeroDivisionError
+        now_percent_str = percent(contribution, sum_contribution_now, '{.2f}%', '0%')
+        end_percent_str = percent(contribution, max_contribution, ' [{}%]', default='')
         ideal_contr = round(max_contribution / rest_members_count)
         if contribution >= ideal_contr:  # слишком много закинул
             # больше не используем этого человека в расчётах
@@ -207,10 +215,10 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
             need_more_str = ''
         else:
             need_more = ideal_contr - contribution
-            need_more_str = f' + {need_more}💰 or {need_more // 20}🍅/🌎 or {need_more // 40}⚡'
+            need_more_str = f' more {need_more}💰 or {need_more // 20}🍅/🌎 or {need_more // 40}⚡'
 
         waiting = '🕐' if member['rsvp'] == 'waiting' else ''
-        output_lines.append(f'{percent}% {waiting}`{member["name"]}`{need_more_str}')
+        output_lines.append(f'{now_percent_str}{end_percent_str} {waiting}`{member["name"]}`{need_more_str}')
 
     if comments:
         output_lines.append('')
