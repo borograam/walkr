@@ -8,8 +8,8 @@ import requests
 
 import meta
 
-DEFAULT_CLIENT_VERSION = "6.12.2.12"
-DEFAULT_IOS_VERSION = "15.3.1"
+DEFAULT_CLIENT_VERSION = "6.14.1"
+DEFAULT_IOS_VERSION = "16.1.1.3"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -41,7 +41,7 @@ def _get_params(
         "locale": "en",
         "client_version": client_version,
         "platform": "ios",
-        "timezone": 6,
+        "timezone": 2,
         "os_version": f"iOS {ios_version}",
         "auth_token": auth_token,
         "country_code": "RU",
@@ -64,6 +64,7 @@ async def _make_request(method: str, url: str, session: aiohttp.ClientSession, a
     else:
         raise ValueError(f'unknown method - {method}')
 
+    # todo: catch not 200, log error
     async with mng as response:
         result = await response.json()
         logger.info('response %s status, \ndata=%s', response.status, result)

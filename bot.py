@@ -23,6 +23,7 @@ logger.setLevel(logging.DEBUG)
 
 
 # todo: error logger handler to my telegram in pm
+# todo: metrics of answer timings. may be make grafana/kibana?
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
