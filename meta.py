@@ -44,6 +44,12 @@ epics = {
             'Wooden bird': 9370000,
         }
     },
+    11: {
+        'name': 'The space conversion technology',
+        'amounts': {
+            None: 30530000
+        }
+    },
     12: {
         'name': "The furious Dragon King",
         'amounts': {
@@ -89,12 +95,6 @@ epics = {
         'name': "Escort the lost star traveler",
         'amounts': {
             None: 10206000
-        }
-    },
-    6662: {
-        'name': 'The space conversion technology',
-        'amounts': {
-            None: 30530000
         }
     },
     6663: {

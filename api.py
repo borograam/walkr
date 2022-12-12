@@ -64,8 +64,9 @@ async def _make_request(method: str, url: str, session: aiohttp.ClientSession, a
     else:
         raise ValueError(f'unknown method - {method}')
 
-    # todo: catch not 200, log error
     async with mng as response:
+        if response.status != 200:
+            raise ValueError('response code is not 200: %s url: %s\ndata=%s', response.status, url, response.text())
         result = await response.json()
         logger.info('response %s status, \ndata=%s', response.status, result)
         return result
@@ -111,29 +112,32 @@ class Fleet:
     epic_id: int
     voting: Optional[str]
 
+    @classmethod
+    def from_api_answer(cls, data: dict) -> Optional['Fleet']:
+        if not data['fleet']:  # not in fleet now
+            return None
 
-def what_the_fleet(data: dict) -> Fleet:  # todo it in Fleet init?
-    voting = None
-    voting_events = [h for h in data['fleet_histories'] if h['event_type'] == 'voting']
-    if voting_events:
-        member_count = data['fleet']['players_count']
-        vote_results = []
-        for vote_event in voting_events:
-            for votes, option in zip(
-                    (vote_event['value_a'], vote_event['value_b']),
-                    (vote_event['label_a'], vote_event['label_b'])
-            ):
-                if 2 * votes >= member_count:
-                    vote_results.append(option)
-                    break
-        voting = '|'.join(vote_results)
-    return Fleet(
-        name=data["fleet"]["name"],
-        id=data["fleet"]["id"],
-        epic_name=data["fleet"]["epic"]["name"],
-        epic_id=data["fleet"]["epic"]["id"],
-        voting=voting
-    )
+        voting = None
+        voting_events = [h for h in data['fleet_histories'] if h['event_type'] == 'voting']
+        if voting_events:
+            member_count = data['fleet']['players_count']
+            vote_results = []
+            for vote_event in voting_events:
+                for votes, option in zip(
+                        (vote_event['value_a'], vote_event['value_b']),
+                        (vote_event['label_a'], vote_event['label_b'])
+                ):
+                    if 2 * votes >= member_count:
+                        vote_results.append(option)
+                        break
+            voting = '|'.join(vote_results)
+        return cls(
+            name=data["fleet"]["name"],
+            id=data["fleet"]["id"],
+            epic_name=data["fleet"]["epic"]["name"],
+            epic_id=data["fleet"]["epic"]["id"],
+            voting=voting
+        )
 
 
 @dataclass
@@ -146,19 +150,20 @@ class Event:
     current_energy: int
     max_energy: int
 
-
-def what_the_event(data: dict) -> Event:
-    status = data['event_status']
-    type = data['event']['event_type']
-    current_values = tuple(data['fleet'][f'value_{c}'] for c in ('a', 'b', 'c'))
-    max_values = tuple(data['event'][f'resource_{c}'] for c in ('a', 'b', 'c'))
-    value_labels = tuple(data['event'][f'label_{c}'] for c in ('a', 'b', 'c'))
-    if status == 'path':
-        current_energy = data['fleet']['energy'] + data['fleet']['consumed_energy']
-    else:  # there is energy from the last path
-        current_energy = 0
-    max_energy = data['path']['required_energy']
-    return Event(status, type, current_values, max_values, value_labels, current_energy, max_energy)
+    @classmethod
+    def from_api_answer(cls, data: dict) -> 'Event':
+        status = data['event_status']
+        type = data['event']['event_type']
+        current_values = tuple(data['fleet'][f'value_{c}'] for c in ('a', 'b', 'c'))
+        max_values = tuple(data['event'][f'resource_{c}'] for c in ('a', 'b', 'c'))
+        value_labels = tuple(data['event'][f'label_{c}'] for c in ('a', 'b', 'c'))
+        if status == 'path':
+            current_energy = data['fleet']['energy'] + data['fleet']['consumed_energy']
+        else:  # there is energy from the last path
+            current_energy = 0
+        max_energy = data['path']['required_energy']
+        # todo: make an answer schema and validate the types
+        return cls(status, type, current_values, max_values, value_labels, current_energy, max_energy)
 
 
 async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
@@ -167,10 +172,10 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
     url = 'https://production.sw.fourdesire.com/api/v2/fleets/current'
     result = await _make_request('get', url, session, auth_token)
 
-    # result can be like {'success': True, 'fleet': None, 'now': 1667901025}
-    # todo catch it
-
-    fleet = what_the_fleet(result)
+    fleet = Fleet.from_api_answer(result)
+    if not fleet:
+        return 'Сейчас не в эпопее'
+    
     comments = []
 
     if fleet.epic_id not in meta.epics:
@@ -196,7 +201,7 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
     fleet_percent = percent(sum_contribution_now, max_contribution, ' [{}%]', default='')
     output_lines = [f'{fleet.name} ({fleet.epic_name}{specify_voting}){fleet_percent}']
 
-    event = what_the_event(result)
+    event = Event.from_api_answer(result)
     cur_event_donation = ', '.join(
         f'{value}/{max_value}'
         for value, max_value in zip(event.current_values, event.max_values)
@@ -204,10 +209,11 @@ async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
     )
     output_lines.append(f'{event.type} ({cur_event_donation}) -> {event.current_energy}/{event.max_energy}⚡\n')
 
+    max_contribution_copy = max_contribution
     for member in result["members"]:
         contribution = member['contribution']
         now_percent_str = percent(contribution, sum_contribution_now, '{:.2f}%', '0%')
-        end_percent_str = percent(contribution, max_contribution, ' [{}%]', default='')
+        end_percent_str = percent(contribution, max_contribution_copy, ' [{}%]', default='')
         ideal_contr = round(max_contribution / rest_members_count)
         if contribution >= ideal_contr:  # слишком много закинул
             # больше не используем этого человека в расчётах
