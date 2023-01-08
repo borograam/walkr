@@ -141,8 +141,8 @@ async def make_lab_requests(
     for token in db_session.query(orm.Token).filter(orm.Token.active):
         req = await api.get_user_request(token.value, http_session)
         if (
-                req.last_requested_at.replace(tzinfo=ZoneInfo('utc'))
-                + datetime.timedelta(hours=6) < datetime.datetime.now().astimezone(ZoneInfo('utc'))
+                req.last_requested_at.replace(tzinfo=ZoneInfo('UTC'))
+                + datetime.timedelta(hours=6) < datetime.datetime.now().astimezone(ZoneInfo('UTC'))
                 and req.total_donation != req.requirements
         ):
             await api.make_lab_request(token.value, http_session)

@@ -130,8 +130,8 @@ async def _get_lab_requests(
 
         for progress in progresses:
             seconds_left = (
-                        progress.request.requested_dt.replace(tzinfo=ZoneInfo('utc')) + datetime.timedelta(hours=6) -
-                        datetime.datetime.now(tz=ZoneInfo('utc'))).seconds
+                        progress.request.requested_dt.replace(tzinfo=ZoneInfo('UTC')) + datetime.timedelta(hours=6) -
+                        datetime.datetime.now(tz=ZoneInfo('UTC'))).seconds
             message_rows.append(
                 f' \\- *{markdown_escape(progress.request.lab_planet.user.name)}* {progress.total_donation}/{progress.request.lab_planet.planet_requirements} осталось {seconds_left // 3600}h{seconds_left % 3600 // 60}m')
 

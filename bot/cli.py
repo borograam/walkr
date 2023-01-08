@@ -49,7 +49,7 @@ if __name__ == '__main__':
                 session.add(token)
             else:
                 token = tokens[0]
-            token.update_dt = datetime.now(tz=ZoneInfo('utc'))
+            token.update_dt = datetime.now(tz=ZoneInfo('UTC'))
             token.value = args.token
             token.active = True
             token.expired_dt = datetime.fromtimestamp(result['authorization']['token_expired_at'])
