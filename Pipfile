@@ -12,6 +12,8 @@ beautifulsoup4 = "*"
 pytest = "*"
 python-telegram-bot = "*"
 aiohttp = "<4.0.0"
+marshmallow = "*"
+sqlalchemy = "*"
 
 [dev-packages]
 
