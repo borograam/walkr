@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-async def get_epic_info(auth_token: str, session: aiohttp.ClientSession):
-    # todo: логически поделить это на отдельные controller и view
-    # todo: коротко о следующих этапах
+async def get_epic_info(token: orm.Token, session: aiohttp.ClientSession):
+    # todo: вынести формирование самого сообщения отсюда в bot.py
+    # todo? коротко о следующих этапах - нужно вручную заполнять мету
 
     try:
-        fleet, event = await api.get_fleet(auth_token, session)
+        fleet, event = await api.get_fleet(token, session)
     except api.NotInEpic:
         return 'Сейчас не в эпопее'
 
@@ -126,11 +126,13 @@ async def get_current_lab_planets(
         http_session: aiohttp.ClientSession,
         db_session: orm.Session
 ) -> tuple[list[orm.LabRequestProgress], orm.Query]:
-    auth_token: str = db_session.query(orm.Token).filter(orm.Token.active).first().value
-    api_lab_requests = await api.get_lab_planets(auth_token, http_session)
+    token: orm.Token = db_session.query(orm.Token).filter(orm.Token.active).first()
+    api_lab_requests = await api.get_lab_planets(token, http_session)
     req_progresses = _get_orm_request_progresses(db_session, api_lab_requests)
     has_token_no_request_query = db_session.query(orm.User).join(orm.Token).filter(
-        orm.User.id.notin_([r.request.lab_planet.user_id for r in req_progresses]))
+        orm.User.id.notin_([r.request.lab_planet.user_id for r in req_progresses]),
+        orm.Token.active
+    )
     return req_progresses, has_token_no_request_query
 
 
@@ -138,8 +140,11 @@ async def make_lab_requests(
         http_session: aiohttp.ClientSession,
         db_session: orm.Session
 ) -> None:
+    # todo: можно сначала get_current_lab_planets запросить и заведомо выбросить тех, у кого точно есть там запрос.
+    #  Плюс сразу будут данные для отрисовки апдейта сообщения
     for token in db_session.query(orm.Token).filter(orm.Token.active):
         req = await api.get_user_request(token.value, http_session)
+        # todo: прикапывать это в LabRequestProgress
         if (
                 req.last_requested_at.replace(tzinfo=ZoneInfo('UTC'))
                 + datetime.timedelta(hours=6) < datetime.datetime.now().astimezone(ZoneInfo('UTC'))

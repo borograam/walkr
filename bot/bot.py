@@ -32,6 +32,8 @@ DEVELOPER_CHAT_ID = 163127202
 
 # todo: metrics of answer timings. may be make grafana/kibana? what about zabbix?
 # todo: прикапывать цифры из инфы о лабе, рисовать графики в динамике
+# todo: cron процесс (отдельный или иструментами бота) для автоматического перезапроса инфы о планетах
+# todo? нотификация, когда появилась возможность кому-то сделать запрос (а если автозапрос?)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -81,6 +83,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 update.callback_query.message.id, update.callback_query.data)
 
     query = update.callback_query
+    # todo: прикапывать факт нажатия на кнопку - кто именно, когда, на какую, под каким сообщением
+    #  (сообщения же тоже хотел в бд класть, как раз будет FK)
 
     if query.data == 'update_epic_info':
         text, reply_markup = await _get_epic_info(update, context, callback=True)
@@ -97,7 +101,11 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         http_session = context.bot_data['aiohttp_session']
         with orm.make_session() as db_session:
             await logic.make_lab_requests(http_session, db_session)
+            # todo: вот отсюда можно было бы как минимум возвращать стейт, чтобы адекватно дальше прорисовать
+            #  непроставившихся (но другая идея с просмотром состояния из бд как-то универсальнее)
 
+            # todo: а ещё по списку удачно проставившихся можно было бы рассылать уведомления в личку, типо "юзер Х
+            #  сделал за вас запрос"
         text, reply_markup = await _get_lab_requests(update, context, callback=True)
         edit_message_text_kwargs = {'text': text, 'reply_markup': reply_markup, 'parse_mode': ParseMode.MARKDOWN_V2}
     else:
@@ -132,17 +140,20 @@ async def _get_lab_requests(
             seconds_left = (
                         progress.request.requested_dt.replace(tzinfo=ZoneInfo('UTC')) + datetime.timedelta(hours=6) -
                         datetime.datetime.now(tz=ZoneInfo('UTC'))).seconds
+            # todo: пометить отдельным значком "ключа" тех, чьи токены у меня есть
             message_rows.append(
                 f' \\- *{markdown_escape(progress.request.lab_planet.user.name)}* {progress.total_donation}/{progress.request.lab_planet.planet_requirements} осталось {seconds_left // 3600}h{seconds_left % 3600 // 60}m')
 
         has_token_no_request_count = has_token_no_request_query.count()
         if has_token_no_request_count:
+            # todo: уже тут понимать, что планета может быть докачанной и явно это показывать
             message_rows.append(markdown_escape('\nСледующим игрокам можно попробовать сделать запрос ботом:\n'))
             for user in has_token_no_request_query:
                 message_rows.append(f' \\- *{markdown_escape(user.name)}*')
 
             message_rows.append(f'_{markdown_escape("(правда, я бессилен в случае, если планета докачана до конца)")}_')
 
+        # todo: добавить блок с информацией о протухших токенах
         session.commit()
 
     now = datetime.datetime.now(tz=ZoneInfo("Europe/Moscow")).strftime('%d.%m.%Y %H:%M:%S')
@@ -222,7 +233,8 @@ def main():
 
     # todo: /note command to log something - only after adding some log parsing
     # todo: some command to keep metrics from spaceship mission - only after adding a db
-    # todo: logout command, need to add telegram id to user table
+    # todo: команды /register и /logout - первая запоминает логин и пароль по айди телеграм юзера в таблицу, вторая
+    #  делает по ним signin
 
     application.run_polling()
 

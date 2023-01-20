@@ -41,6 +41,8 @@ def get_or_create(
     return query.all()
 
 
+# todo: таблица с айдишниками отправленных сообщений для их автообновления из крона, подтягивающий инфу о прогрессе
+
 class Token(Base):
     __tablename__ = "token"
 
@@ -54,6 +56,9 @@ class Token(Base):
     user_id = mapped_column(ForeignKey("user.id"))
     user: Mapped["User"] = relationship(back_populates="token", uselist=False)
 
+    class Invalid(Exception):
+        pass
+
 
 class User(Base):
     __tablename__ = "user"
@@ -66,6 +71,8 @@ class User(Base):
 
 
 class LabPlanet(Base):
+    # todo: добавить критерий докачанности планеты (ну или же динамически селектить последний прогресс реквестов)
+    # todo: реализовать какие-нибудь хуки на факт докачки планеты (для возможности отправки уведомления)
     __tablename__ = 'lab_planet'
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -88,6 +95,13 @@ class LabRequest(Base):
 
     lab_planet: Mapped[LabPlanet] = relationship(back_populates='lab_requests')
     progresses: Mapped[List['LabRequestProgress']] = relationship(back_populates='request')
+
+
+# todo: новая таблица lab_request_donation, стобцы lab_request_id, energy, from_user, update_dt
+#  наполняется путём парсинга donated_counter из прогресса (поиск по юзеру, обновление в случае существования)
+#  опасно: если донативший ни разу не ставил планету, упадёт на FK - надо перезапросить весь список лабы и заполнить
+#  недостающих
+#  плюс: нужна миграция по заполнению таблицы на основании уже существующих прогрессов
 
 
 class LabRequestProgress(Base):

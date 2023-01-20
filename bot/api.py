@@ -8,6 +8,8 @@ import aiohttp
 import requests
 from marshmallow import Schema, fields
 
+import orm
+
 DEFAULT_CLIENT_VERSION = "6.15.1.5"
 DEFAULT_IOS_VERSION = "16.1.1"
 
@@ -16,7 +18,7 @@ logger.setLevel(logging.DEBUG)
 
 
 # todo: перейти на https://github.com/lovasoa/marshmallow_dataclass
-# а то выходит, что поля приходится дублировать
+#  а то выходит, что поля приходится дублировать
 
 
 class EpicSchema(Schema):
@@ -82,7 +84,7 @@ class EventSchema(Schema):
     epic_id = fields.Int()
     cover = fields.Nested(UrlContainerSchema())
     event_type = fields.Str()
-    resource_a = fields.Int()
+    resource_a = fields.Int(allow_none=True)
     resource_b = fields.Int(allow_none=True)
     resource_c = fields.Int(allow_none=True)
     created_at = fields.DateTime(format='%Y-%m-%d %H:%M:%S')
@@ -183,14 +185,14 @@ async def make_async_request(
         method: str,
         url: str,
         session: aiohttp.ClientSession,
-        auth_token: str,
+        token: orm.Token,
         additional_params: dict = None,
         additional_headers: dict = None
 ) -> str:
     # todo: 1-2 second optional cache to prevent the same multiple requests (oh no, async)
     additional_params = additional_params or {}
     additional_headers = additional_headers or {}
-    params = _get_params(auth_token, **additional_params)
+    params = _get_params(token.value, **additional_params)
     headers = _get_headers(**additional_headers)
 
     logger.info('async %s %s params=%s headers=%s', method, url, params, headers)
@@ -209,9 +211,8 @@ async def make_async_request(
         result = await response.text()
         if response.status == 401:
             # токен устарел
-            # todo: а вот тут надо выставить active=0 токену в бд
-            raise ValueError('response code is 401, token is invalid: %s url: %s\ndata=%s', response.status, url,
-                             result)
+            token.active = 0
+            raise token.Invalid(f'response code is 401, token is invalid url: {url}')
         elif response.status != 200:
             raise ValueError(f'response code is not 200: {response.status} url: {url}\ndata={result}')
         logger.info('response %s status, \ndata=%s', response.status, result)
@@ -325,9 +326,9 @@ class NotInEpic(Exception):
     pass
 
 
-async def get_fleet(auth_token: str, session: aiohttp.ClientSession) -> tuple[FleetWrapper, EventWrapper]:
+async def get_fleet(token: orm.Token, session: aiohttp.ClientSession) -> tuple[FleetWrapper, EventWrapper]:
     url = 'https://production.sw.fourdesire.com/api/v2/fleets/current'
-    result: str = await make_async_request('get', url, session, auth_token)
+    result: str = await make_async_request('get', url, session, token)
     result: dict = FleetsApiAnswerSchema().loads(result)
 
     fleet = FleetWrapper.from_api_answer(result)
@@ -351,7 +352,7 @@ class CommentContentSchema(Schema):
     total_donation = fields.Int()  # сколько уже прокачано
     current_donation = fields.Int()  # сколько прокачано этим запросом
     donated_counter = fields.Str()  # кто в этом запросе сколько вкинул. 271306|500+500+500+500+500,1599163|500+500
-    last_requested_at = fields.DateTime(format='timestamp')
+    last_requested_at = fields.DateTime(format='timestamp')  # todo: если запросов раньше не было, тут 0. Нужно общее решение проблемы
     text = fields.Str()  # для текста и стикера
     level = fields.Int()  # в research в lab api добавлено
 
@@ -384,12 +385,12 @@ class LabRequestWrapper:
     donated_counter: str
 
 
-async def get_lab_planets(auth_token: str, session: aiohttp.ClientSession) -> list[LabRequestWrapper]:
+async def get_lab_planets(token: orm.Token, session: aiohttp.ClientSession) -> list[LabRequestWrapper]:
     result = await make_async_request(
         'get',
         'https://production.sw.fourdesire.com/api/v2/comments',
         session,
-        auth_token,
+        token,
         {
             'commentable_id': 68334,
             'commentable_type': 'lab',
@@ -443,12 +444,12 @@ class LabAnswerSchema(Schema):
     now = fields.DateTime(format='timestamp')
 
 
-async def get_user_request(auth_token: str, session: aiohttp.ClientSession) -> LabRequestWrapper:
+async def get_user_request(token: orm.Token, session: aiohttp.ClientSession) -> LabRequestWrapper:
     result = await make_async_request(
         'get',
         'https://production.sw.fourdesire.com/api/v2/labs/current',
         session,
-        auth_token
+        token
     )
     result = LabAnswerSchema().loads(result)
 
@@ -465,11 +466,11 @@ async def get_user_request(auth_token: str, session: aiohttp.ClientSession) -> L
     )
 
 
-async def make_lab_request(auth_token: str, session: aiohttp.ClientSession) -> None:
+async def make_lab_request(token: orm.Token, session: aiohttp.ClientSession) -> None:
     await make_async_request(
         'post',
         'https://production.sw.fourdesire.com/api/v2/labs/68334/request',
         session,
-        auth_token,
+        token,
         additional_headers={'Content-Type': 'application/json'}
     )
