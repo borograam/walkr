@@ -47,7 +47,7 @@ class UserSchema(Schema):
     population = fields.Int()
     spaceship = fields.Str()
     contribution = fields.Int()
-    title = fields.Str()
+    title = fields.Str(allow_none=True)
     role = fields.Str()
     rsvp = fields.Str()
     score = fields.Int()
