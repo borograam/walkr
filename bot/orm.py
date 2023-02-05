@@ -43,6 +43,7 @@ def get_or_create(
 
 # todo: таблица с айдишниками отправленных сообщений для их автообновления из крона, подтягивающий инфу о прогрессе
 
+# todo: или в токен, или в юзера прикопать telegram id для отправки личных нотификаций
 class Token(Base):
     __tablename__ = "token"
 
@@ -55,9 +56,6 @@ class Token(Base):
 
     user_id = mapped_column(ForeignKey("user.id"))
     user: Mapped["User"] = relationship(back_populates="token", uselist=False)
-
-    class Invalid(Exception):
-        pass
 
 
 class User(Base):
@@ -95,6 +93,7 @@ class LabRequest(Base):
 
     lab_planet: Mapped[LabPlanet] = relationship(back_populates='lab_requests')
     progresses: Mapped[List['LabRequestProgress']] = relationship(back_populates='request')
+    # todo: новая колонка finished - bool, для отфильтровывания добитых раньше времени, а для этого alembic бы воткнуть
 
 
 # todo: новая таблица lab_request_donation, стобцы lab_request_id, energy, from_user, update_dt

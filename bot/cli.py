@@ -34,7 +34,7 @@ if __name__ == '__main__':
         )
         result = json.loads(result)
         if not result['success']:
-            raise ValueError('api answer doesnt have success:true')
+            raise ValueError('api answer does not contain success:true')
 
         with orm.make_session() as session:
             user = session.query(orm.User).get(result['authorization']['player_id'])

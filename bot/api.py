@@ -20,7 +20,8 @@ logger.setLevel(logging.DEBUG)
 # todo: перейти на https://github.com/lovasoa/marshmallow_dataclass
 #  а то выходит, что поля приходится дублировать
 
-
+# todo: сделать класс-обёртку, объект которого ссылается на токен и умеет делать все нужные запросы
+#  (завернуть туда все отдельные методы отсюда)
 class EpicSchema(Schema):
     id = fields.Int()
     icon = fields.URL()
@@ -39,7 +40,7 @@ class UserSchema(Schema):
     population = fields.Int()
     spaceship = fields.Str()
     contribution = fields.Int()
-    title = fields.Str()
+    title = fields.Str(allow_none=True)
     role = fields.Str()
     rsvp = fields.Str()
     score = fields.Int()
@@ -181,18 +182,22 @@ def _get_params(
     return data
 
 
+class InvalidToken(Exception):
+    pass
+
+
 async def make_async_request(
         method: str,
         url: str,
         session: aiohttp.ClientSession,
-        token: orm.Token,
+        auth_token: str,
         additional_params: dict = None,
         additional_headers: dict = None
 ) -> str:
     # todo: 1-2 second optional cache to prevent the same multiple requests (oh no, async)
     additional_params = additional_params or {}
     additional_headers = additional_headers or {}
-    params = _get_params(token.value, **additional_params)
+    params = _get_params(auth_token, **additional_params)
     headers = _get_headers(**additional_headers)
 
     logger.info('async %s %s params=%s headers=%s', method, url, params, headers)
@@ -211,8 +216,7 @@ async def make_async_request(
         result = await response.text()
         if response.status == 401:
             # токен устарел
-            token.active = 0
-            raise token.Invalid(f'response code is 401, token is invalid url: {url}')
+            raise InvalidToken(f'response code is 401, token is invalid url: {url}')
         elif response.status != 200:
             raise ValueError(f'response code is not 200: {response.status} url: {url}\ndata={result}')
         logger.info('response %s status, \ndata=%s', response.status, result)
@@ -326,9 +330,9 @@ class NotInEpic(Exception):
     pass
 
 
-async def get_fleet(token: orm.Token, session: aiohttp.ClientSession) -> tuple[FleetWrapper, EventWrapper]:
+async def get_fleet(auth_token: str, session: aiohttp.ClientSession) -> tuple[FleetWrapper, EventWrapper]:
     url = 'https://production.sw.fourdesire.com/api/v2/fleets/current'
-    result: str = await make_async_request('get', url, session, token)
+    result: str = await make_async_request('get', url, session, auth_token)
     result: dict = FleetsApiAnswerSchema().loads(result)
 
     fleet = FleetWrapper.from_api_answer(result)
@@ -385,12 +389,12 @@ class LabRequestWrapper:
     donated_counter: str
 
 
-async def get_lab_planets(token: orm.Token, session: aiohttp.ClientSession) -> list[LabRequestWrapper]:
+async def get_lab_planets(auth_token: str, session: aiohttp.ClientSession) -> list[LabRequestWrapper]:
     result = await make_async_request(
         'get',
         'https://production.sw.fourdesire.com/api/v2/comments',
         session,
-        token,
+        auth_token,
         {
             'commentable_id': 68334,
             'commentable_type': 'lab',
@@ -444,12 +448,12 @@ class LabAnswerSchema(Schema):
     now = fields.DateTime(format='timestamp')
 
 
-async def get_user_request(token: orm.Token, session: aiohttp.ClientSession) -> LabRequestWrapper:
+async def get_user_request(auth_token: str, session: aiohttp.ClientSession) -> LabRequestWrapper:
     result = await make_async_request(
         'get',
         'https://production.sw.fourdesire.com/api/v2/labs/current',
         session,
-        token
+        auth_token
     )
     result = LabAnswerSchema().loads(result)
 
@@ -466,11 +470,11 @@ async def get_user_request(token: orm.Token, session: aiohttp.ClientSession) -> 
     )
 
 
-async def make_lab_request(token: orm.Token, session: aiohttp.ClientSession) -> None:
+async def make_lab_request(auth_token: str, session: aiohttp.ClientSession) -> None:
     await make_async_request(
         'post',
         'https://production.sw.fourdesire.com/api/v2/labs/68334/request',
         session,
-        token,
+        auth_token,
         additional_headers={'Content-Type': 'application/json'}
     )

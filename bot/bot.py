@@ -10,6 +10,9 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Application, CallbackQueryHandler
 
+from sqlalchemy.sql import func
+from sqlalchemy import select
+
 # todo: перенести секреты в venv (вычищать в момент инициализации)
 import config
 import logic
@@ -60,9 +63,7 @@ async def _get_epic_info(
 
     http_session = context.bot_data['aiohttp_session']
     with orm.make_session() as session:
-        walkr_token = session.query(orm.Token).filter(orm.Token.user_id == 271306).one().value
-
-    result = await logic.get_epic_info(walkr_token, http_session)
+        result = await logic.get_epic_info(http_session, session)
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Обновить", callback_data="update_epic_info")]])
 
     return result, reply_markup
@@ -133,23 +134,49 @@ async def _get_lab_requests(
 
     message_rows = ['Вижу такие запросы в лаборатории:\n']
     with orm.make_session() as session:
-        progresses, has_token_no_request_query = await logic.get_current_lab_planets(http_session, session)
-        progresses.sort(key=lambda p: p.request.requested_dt, reverse=True)
+        await logic.update_current_request_progresses(http_session, session)
+        query = (  # todo: вынести запрос для возможности переиспользования
+            select(
+                orm.User.name,
+                orm.User.id.label('user_id'),
+                func.max(orm.LabRequestProgress.total_donation),
+                orm.LabPlanet.planet_requirements,
+                orm.LabRequest.requested_dt
+            ).select_from(orm.LabRequestProgress)
+            .join(orm.LabRequest)
+            .join(orm.LabPlanet)
+            .join(orm.User)
+            .where(orm.LabRequest.requested_dt >= datetime.datetime.now(tz=ZoneInfo('UTC')) - datetime.timedelta(hours=6))
+            .group_by(orm.User.name, orm.LabPlanet.planet_requirements, orm.LabRequest.requested_dt)
+            .order_by(orm.LabRequest.requested_dt.desc())
+        )
+        # todo: тут есть бага, юзер будет дублироваться после добитой планеты, нужна новая колонка в LabRequest
 
-        for progress in progresses:
+        users_with_request = []
+        for username, user_id, energy_now, energy_max, request_start in session.execute(query):
+            users_with_request.append(user_id)
             seconds_left = (
-                        progress.request.requested_dt.replace(tzinfo=ZoneInfo('UTC')) + datetime.timedelta(hours=6) -
-                        datetime.datetime.now(tz=ZoneInfo('UTC'))).seconds
+                    request_start.replace(tzinfo=ZoneInfo('UTC')) + datetime.timedelta(hours=6) -
+                    datetime.datetime.now(tz=ZoneInfo('UTC'))).seconds
             # todo: пометить отдельным значком "ключа" тех, чьи токены у меня есть
             message_rows.append(
-                f' \\- *{markdown_escape(progress.request.lab_planet.user.name)}* {progress.total_donation}/{progress.request.lab_planet.planet_requirements} осталось {seconds_left // 3600}h{seconds_left % 3600 // 60}m')
+                f' \\- *{markdown_escape(username)}* {energy_now}/{energy_max} осталось {seconds_left // 3600}h{seconds_left % 3600 // 60}m')
 
-        has_token_no_request_count = has_token_no_request_query.count()
-        if has_token_no_request_count:
+        has_token_no_request_query = (
+            select(orm.User.name)
+            .join(orm.Token)
+            .where(orm.Token.active)
+            .where(orm.User.id.not_in(
+                select(query.subquery().c.user_id.distinct())
+            ))
+        )
+
+        usernames_to_request = session.execute(has_token_no_request_query).scalars()
+        if usernames_to_request:
             # todo: уже тут понимать, что планета может быть докачанной и явно это показывать
             message_rows.append(markdown_escape('\nСледующим игрокам можно попробовать сделать запрос ботом:\n'))
-            for user in has_token_no_request_query:
-                message_rows.append(f' \\- *{markdown_escape(user.name)}*')
+            for username in usernames_to_request:
+                message_rows.append(f' \\- *{markdown_escape(username)}*')
 
             message_rows.append(f'_{markdown_escape("(правда, я бессилен в случае, если планета докачана до конца)")}_')
 
@@ -163,7 +190,7 @@ async def _get_lab_requests(
         message_rows.append(markdown_escape(f'\nАктуально на {now} MSK'))
 
     buttons = [InlineKeyboardButton("Обновить", callback_data="update_lab_requests")]
-    if has_token_no_request_count:
+    if usernames_to_request:
         buttons.append(InlineKeyboardButton("Делаем запросы", callback_data="make_requests"))
 
     reply_markup = InlineKeyboardMarkup([buttons])
@@ -235,6 +262,8 @@ def main():
     # todo: some command to keep metrics from spaceship mission - only after adding a db
     # todo: команды /register и /logout - первая запоминает логин и пароль по айди телеграм юзера в таблицу, вторая
     #  делает по ним signin
+
+    # todo: команда set_token с conversation, для регистрации токена и сразу и телеграм юзера
 
     application.run_polling()
 

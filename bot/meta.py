@@ -1,3 +1,5 @@
+# todo: вынести в базу?
+
 epics = {
     2: {
         'name': "The Angry People of Corn Star",
@@ -21,7 +23,7 @@ epics = {
         'name': "Reflections from home",
         'amounts': {
             "Fight Back!": 31730000,
-            "Bribe Them": 28690000,
+            "Bribe Them!": 28690000,
         }
     },
     6: {
@@ -85,6 +87,15 @@ epics = {
             None: 12580000
         }
     },
+    17: {
+        'name': 'Release The Sealed Monster',
+        'amounts': {
+            'North Forest|Left Gate': 44180000,
+            'South Forest|Right Gate': 44180000,
+            'South Forest|Left Gate': 45580000,
+            'North Forest|Right Gate': 42780000,
+        }
+    },
     18: {
         'name': 'The Most Heart-Warming Recipe',
         'amounts': {
@@ -95,15 +106,6 @@ epics = {
         'name': "Escort the lost star traveler",
         'amounts': {
             None: 10206000
-        }
-    },
-    6663: {
-        'name': 'Release The Sealed Monster',
-        'amounts': {
-            'North Forest|Left Gate': 44180000,
-            'South Forest|Right Gate': 44180000,
-            'South Forest|Left Gate': 45580000,
-            'North Forest|Right Gate': 42780000,
         }
     },
     6664: {

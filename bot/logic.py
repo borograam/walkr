@@ -3,6 +3,7 @@ import logging
 from zoneinfo import ZoneInfo
 
 import aiohttp
+from sqlalchemy import select
 
 import api
 import meta
@@ -12,12 +13,14 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-async def get_epic_info(token: orm.Token, session: aiohttp.ClientSession):
+async def get_epic_info(http_session: aiohttp.ClientSession, db_session: orm.Session):
     # todo: вынести формирование самого сообщения отсюда в bot.py
     # todo? коротко о следующих этапах - нужно вручную заполнять мету
 
+    auth_token = db_session.query(orm.Token).filter(orm.Token.user_id == 271306).one().value
+
     try:
-        fleet, event = await api.get_fleet(token, session)
+        fleet, event = await api.get_fleet(auth_token, http_session)
     except api.NotInEpic:
         return 'Сейчас не в эпопее'
 
@@ -122,28 +125,37 @@ def _get_orm_request_progresses(
     return ret
 
 
-async def get_current_lab_planets(
+async def update_current_request_progresses(
         http_session: aiohttp.ClientSession,
         db_session: orm.Session
 ) -> tuple[list[orm.LabRequestProgress], orm.Query]:
-    token: orm.Token = db_session.query(orm.Token).filter(orm.Token.active).first()
-    api_lab_requests = await api.get_lab_planets(token, http_session)
-    req_progresses = _get_orm_request_progresses(db_session, api_lab_requests)
-    has_token_no_request_query = db_session.query(orm.User).join(orm.Token).filter(
-        orm.User.id.notin_([r.request.lab_planet.user_id for r in req_progresses]),
-        orm.Token.active
-    )
-    return req_progresses, has_token_no_request_query
+    api_lab_requests = []
+    while True:
+        try:
+            token: orm.Token = db_session.query(orm.Token).filter(orm.Token.active).first()
+            api_lab_requests = await api.get_lab_planets(token.value, http_session)
+            break
+        except api.InvalidToken:
+            token.active = 0
+            db_session.flush()
+    _get_orm_request_progresses(db_session, api_lab_requests)
 
 
 async def make_lab_requests(
         http_session: aiohttp.ClientSession,
         db_session: orm.Session
 ) -> None:
-    # todo: можно сначала get_current_lab_planets запросить и заведомо выбросить тех, у кого точно есть там запрос.
-    #  Плюс сразу будут данные для отрисовки апдейта сообщения
+    await update_current_request_progresses(http_session, db_session)
+    # todo: получить тех, у кого сейчас точно есть запрос - переиспользовать запрос
+    # select(orm.User.id).
+
+    # todo: итерации цикла запускать параллельно
     for token in db_session.query(orm.Token).filter(orm.Token.active):
-        req = await api.get_user_request(token.value, http_session)
+        try:
+            req = await api.get_user_request(token.value, http_session)
+        except api.InvalidToken:
+            token.active = 0
+            continue
         # todo: прикапывать это в LabRequestProgress
         if (
                 req.last_requested_at.replace(tzinfo=ZoneInfo('UTC'))
