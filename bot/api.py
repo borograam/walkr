@@ -20,6 +20,17 @@ logger.setLevel(logging.DEBUG)
 # todo: перейти на https://github.com/lovasoa/marshmallow_dataclass
 #  а то выходит, что поля приходится дублировать
 
+
+class TimeStamp(fields.DateTime):
+    def __init__(self, *args, **kwargs):
+        super().__init__(format='timestamp')
+
+    def _deserialize(self, value, attr, data, **kwargs) -> datetime:
+        if isinstance(value, int) and value == 0:
+            return datetime(1970, 1, 1)
+        return super()._deserialize(value, attr, data, **kwargs)
+
+
 # todo: сделать класс-обёртку, объект которого ссылается на токен и умеет делать все нужные запросы
 #  (завернуть туда все отдельные методы отсюда)
 class EpicSchema(Schema):
@@ -60,13 +71,13 @@ class FleetSchema(Schema):
     members_min = fields.Int()
     weight = fields.Float()
     invited = fields.Bool()
-    created_at = fields.DateTime(format='timestamp')
-    started_at = fields.DateTime(format='timestamp')
+    created_at = TimeStamp()
+    started_at = TimeStamp()
     event_status = fields.Str()  # path|event ?
     contribution_amount = fields.Int()
     energy = fields.Int()
     consumed_energy = fields.Int()
-    last_consumed_at = fields.DateTime(format='timestamp')
+    last_consumed_at = TimeStamp()
     value_a = fields.Int()
     value_b = fields.Int()
     value_c = fields.Int()
@@ -112,7 +123,7 @@ class EventHistorySchema(Schema):
     value_a = fields.Int()
     value_b = fields.Int()
     value_c = fields.Int()
-    solved_at = fields.DateTime(format='timestamp')
+    solved_at = TimeStamp()
 
 
 class PathSchema(Schema):
@@ -130,7 +141,7 @@ class HitpointsSchema(Schema):
     value_b = fields.Int()
     value_c = fields.Int()
     hitpoints = fields.Int()
-    next_hitpoint_at = fields.Int()  # тут timestamp или 0, но на нуле парсинг ломается
+    next_hitpoint_at = TimeStamp()
     next_hitpoint_countdown = fields.Int(allow_none=True)
 
 
@@ -143,7 +154,7 @@ class FleetsApiAnswerSchema(Schema):
     members = fields.List(fields.Nested(UserSchema()))
     fleet_histories = fields.List(fields.Nested(EventHistorySchema()))
     hitpoints = fields.Nested(HitpointsSchema())
-    now = fields.DateTime(format='timestamp')
+    now = TimeStamp()
 
 
 def _get_headers(
@@ -356,7 +367,7 @@ class CommentContentSchema(Schema):
     total_donation = fields.Int()  # сколько уже прокачано
     current_donation = fields.Int()  # сколько прокачано этим запросом
     donated_counter = fields.Str()  # кто в этом запросе сколько вкинул. 271306|500+500+500+500+500,1599163|500+500
-    last_requested_at = fields.DateTime(format='timestamp')  # todo: если запросов раньше не было, тут 0. Нужно общее решение проблемы
+    last_requested_at = TimeStamp()
     text = fields.Str()  # для текста и стикера
     level = fields.Int()  # в research в lab api добавлено
 
@@ -364,7 +375,7 @@ class CommentContentSchema(Schema):
 class CommentSchema(Schema):
     id = fields.Int()
     comment = fields.Nested(CommentContentSchema())
-    created_at = fields.DateTime(format='timestamp')
+    created_at = TimeStamp()
     blocked = fields.Bool()
     user = fields.Nested(UserSchema())
     raw_comment = fields.Str()
@@ -373,7 +384,7 @@ class CommentSchema(Schema):
 class CommentsAnswerSchema(Schema):
     success = fields.Bool()
     comments = fields.List(fields.Nested(CommentSchema()))
-    now = fields.DateTime(format='timestamp')
+    now = TimeStamp()
 
 
 @dataclass
@@ -445,7 +456,7 @@ class LabAnswerSchema(Schema):
     lab = fields.Nested(LabSchema())
     research = fields.Nested(CommentContentSchema())
     members = fields.List(fields.Nested(UserSchema()))
-    now = fields.DateTime(format='timestamp')
+    now = TimeStamp()
 
 
 async def get_user_request(auth_token: str, session: aiohttp.ClientSession) -> LabRequestWrapper:
