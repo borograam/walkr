@@ -3,6 +3,7 @@ import html
 import json
 import logging
 import traceback
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -109,12 +110,17 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(**edit_message_text_kwargs)
 
 
-def markdown_escape(text: str) -> str:
+def md_esc(text: str) -> str:
     chars = ('_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!')
     for char in chars:
         if char in text:
             text = text.replace(char, f'\\{char}')
     return text
+
+
+def num_to_k(num: int) -> str:
+    num = Decimal(num)
+    return f'{num / 1000}K'
 
 
 async def _get_lab_requests(
@@ -123,33 +129,43 @@ async def _get_lab_requests(
     logger.info('start get_lab_requests')
     http_session = context.bot_data['aiohttp_session']
 
+    def get_progress_line(progress_: orm.LabRequestProgress) -> str:
+        name = md_esc(progress_.request.lab_planet.user.name)
+        now_energy = md_esc(num_to_k(progress_.total_donation))
+        max_energy = md_esc(num_to_k(progress_.request.lab_planet.planet_requirements))
+
+        seconds_left = (
+                progress.request.requested_dt.replace(tzinfo=ZoneInfo('UTC'))
+                + datetime.timedelta(hours=6)
+                - datetime.datetime.now(tz=ZoneInfo('UTC'))
+        ).seconds
+        time_left = f'{seconds_left // 3600}h{seconds_left % 3600 // 60}m'
+
+        return f' \\- *{name}* {now_energy}/{max_energy} осталось {time_left}'
+
     message_rows = ['Вижу такие запросы в лаборатории:\n']
     with orm.make_session() as session:
         progresses, has_token_no_request_query = await logic.get_current_lab_planets(http_session, session)
         progresses.sort(key=lambda p: p.request.requested_dt, reverse=True)
 
         for progress in progresses:
-            seconds_left = (
-                        progress.request.requested_dt.replace(tzinfo=ZoneInfo('UTC')) + datetime.timedelta(hours=6) -
-                        datetime.datetime.now(tz=ZoneInfo('UTC'))).seconds
-            message_rows.append(
-                f' \\- *{markdown_escape(progress.request.lab_planet.user.name)}* {progress.total_donation}/{progress.request.lab_planet.planet_requirements} осталось {seconds_left // 3600}h{seconds_left % 3600 // 60}m')
+            message_rows.append(get_progress_line(progress))
 
         has_token_no_request_count = has_token_no_request_query.count()
         if has_token_no_request_count:
-            message_rows.append(markdown_escape('\nСледующим игрокам можно попробовать сделать запрос ботом:\n'))
+            message_rows.append(md_esc('\nСледующим игрокам можно попробовать сделать запрос ботом:\n'))
             for user in has_token_no_request_query:
-                message_rows.append(f' \\- *{markdown_escape(user.name)}*')
+                message_rows.append(f' \\- *{md_esc(user.name)}*')
 
-            message_rows.append(f'_{markdown_escape("(правда, я бессилен в случае, если планета докачана до конца)")}_')
+            message_rows.append(f'_{md_esc("(правда, я бессилен, если планета докачана уже до конца)")}_')
 
         session.commit()
 
     now = datetime.datetime.now(tz=ZoneInfo("Europe/Moscow")).strftime('%d.%m.%Y %H:%M:%S')
     if callback:
-        message_rows.append(markdown_escape(f'\nОбновлено пользователем {update.effective_user.name} в {now} MSK'))
+        message_rows.append(md_esc(f'\nОбновлено пользователем {update.effective_user.name} в {now} MSK'))
     else:
-        message_rows.append(markdown_escape(f'\nАктуально на {now} MSK'))
+        message_rows.append(md_esc(f'\nАктуально на {now} MSK'))
 
     buttons = [InlineKeyboardButton("Обновить", callback_data="update_lab_requests")]
     if has_token_no_request_count:
