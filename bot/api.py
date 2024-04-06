@@ -8,8 +8,8 @@ import aiohttp
 import requests
 from marshmallow import Schema, fields
 
-DEFAULT_CLIENT_VERSION = "6.15.1.5"
-DEFAULT_IOS_VERSION = "16.1.1"
+DEFAULT_CLIENT_VERSION = "7.2.2.4"
+DEFAULT_IOS_VERSION = "17.4.1"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -154,6 +154,7 @@ class FleetsApiAnswerSchema(Schema):
 
 
 def _get_headers(
+        auth_token: str,
         client_version: str = DEFAULT_CLIENT_VERSION,
         ios_version: str = DEFAULT_IOS_VERSION,
         **additional_params
@@ -164,13 +165,13 @@ def _get_headers(
         'User-Agent': f'Walkr/{client_version} (iPhone; iOS {ios_version}; Scale/3.00)',
         'Accept-Language': 'en-US;q=1, ru-RU;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
+        'authorization': f'Bearer {auth_token}',
     }
     headers.update(additional_params)
     return headers
 
 
 def _get_params(
-        auth_token: str,
         client_version: str = DEFAULT_CLIENT_VERSION,
         ios_version: str = DEFAULT_IOS_VERSION,
         **additional_params
@@ -181,7 +182,6 @@ def _get_params(
         "platform": "ios",
         "timezone": 2,
         "os_version": f"iOS {ios_version}",
-        "auth_token": auth_token,
         "country_code": "RU",
         "device_model": "iPhone13,2"
     }
@@ -200,8 +200,8 @@ async def make_async_request(
     # todo: 1-2 second optional cache to prevent the same multiple requests (oh no, async)
     additional_params = additional_params or {}
     additional_headers = additional_headers or {}
-    params = _get_params(auth_token, **additional_params)
-    headers = _get_headers(**additional_headers)
+    params = _get_params(**additional_params)
+    headers = _get_headers(auth_token, **additional_headers)
 
     logger.info('async %s %s params=%s headers=%s', method, url, params, headers)
     cookies = session.cookie_jar.filter_cookies(session._build_url(url))
@@ -239,8 +239,8 @@ def make_sync_request(
     # todo: объединить два этих метода как-нибудь
     additional_params = additional_params or {}
     additional_headers = additional_headers or {}
-    params = _get_params(auth_token, **additional_params)
-    headers = _get_headers(**additional_headers)
+    params = _get_params(**additional_params)
+    headers = _get_headers(auth_token, **additional_headers)
 
     logger.info('sync %s %s params=%s headers=%s', method, url, params, headers)
     if method == 'get':
